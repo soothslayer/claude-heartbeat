@@ -14,12 +14,21 @@
 // Optional TTS: Kokoro-FastAPI at localhost:8880; falls back to macOS `say`
 //
 // env vars:
-//   WHISPER_BIN     path/name of whisper-cli binary  (default: whisper-cli)
-//   WHISPER_MODEL   path to ggml model file           (default: ~/.cache/whisper/ggml-base.en.bin)
-//   KOKORO_URL      TTS endpoint                      (default: http://127.0.0.1:8880/v1/audio/speech)
-//   KOKORO_VOICE    voice name                        (default: af_heart)
-//   PTT_RELEASE_MS  ms without a touch before release (default: 700)
-//   PTT_TRIGGER     trigger file path                 (default: /tmp/ptt-held)
+//   WHISPER_BIN              path/name of whisper-cli binary  (default: whisper-cli)
+//   WHISPER_MODEL            path to ggml model file           (default: ~/.cache/whisper/ggml-base.en.bin)
+//   KOKORO_URL               TTS endpoint                      (default: http://127.0.0.1:8880/v1/audio/speech)
+//   KOKORO_VOICE             voice name                        (default: af_heart)
+//   PTT_MODE                 toggle (default) or hold
+//                              toggle: press once to start, press again to stop
+//                              hold:   hold key while speaking, release to send
+//   PTT_RELEASE_MS           hold mode only — ms after last key-repeat before stopping (default: 700)
+//   PTT_TRIGGER              trigger file path                 (default: /tmp/ptt-held)
+//   PTT_IDLE_INTERVAL        seconds between idle pings         (default: 15, 0 = off)
+//   PTT_IDLE_SOUND           audio file when idle               (default: /System/Library/Sounds/Tink.aiff)
+//   PTT_THINKING_INTERVAL    seconds between thinking pings     (default: 4, 0 = off)
+//   PTT_THINKING_SOUND       audio file when Claude is working  (default: /System/Library/Sounds/Pop.aiff)
+//   PTT_START_SOUND          audio file played when recording starts (default: /System/Library/Sounds/Ping.aiff)
+//   PTT_STOP_SOUND           audio file played when recording stops  (default: /System/Library/Sounds/Bottle.aiff)
 
 const fs = require('fs');
 const path = require('path');
@@ -31,6 +40,7 @@ const CWD = path.resolve(__dirname, '.');
 const INBOX = path.join(CWD, 'io', 'inbox.jsonl');
 const OUTBOX = path.join(CWD, 'io', 'outbox.jsonl');
 const OFFSET_FILE = path.join(CWD, 'io', '.ptt-offset');
+const RESTART_FLAG = path.join(CWD, 'io', '.restart');
 const TMP_WAV = path.join(os.tmpdir(), 'ptt-in.wav');
 const TMP_RESP_WAV = path.join(os.tmpdir(), 'ptt-out.wav');
 const TRIGGER = process.env.PTT_TRIGGER || '/tmp/ptt-held';
@@ -40,13 +50,21 @@ const WHISPER_MODEL = process.env.WHISPER_MODEL
   || path.join(os.homedir(), '.cache', 'whisper', 'ggml-base.en.bin');
 const KOKORO_URL = process.env.KOKORO_URL || 'http://127.0.0.1:8880/v1/audio/speech';
 const KOKORO_VOICE = process.env.KOKORO_VOICE || 'af_heart';
-const RELEASE_MS = parseInt(process.env.PTT_RELEASE_MS || '700');
-const SAMPLE_RATE = 16000;
+const PTT_MODE           = (process.env.PTT_MODE || 'toggle').toLowerCase();
+const RELEASE_MS         = parseInt(process.env.PTT_RELEASE_MS || '700');
+const IDLE_INTERVAL     = parseInt(process.env.PTT_IDLE_INTERVAL     ?? '15');
+const IDLE_SOUND        = process.env.PTT_IDLE_SOUND        || '/System/Library/Sounds/Tink.aiff';
+const THINKING_INTERVAL = parseInt(process.env.PTT_THINKING_INTERVAL ?? '4');
+const THINKING_SOUND    = process.env.PTT_THINKING_SOUND    || '/System/Library/Sounds/Pop.aiff';
+const START_SOUND       = process.env.PTT_START_SOUND       || '/System/Library/Sounds/Ping.aiff';
+const STOP_SOUND        = process.env.PTT_STOP_SOUND        || '/System/Library/Sounds/Bottle.aiff';
+const SAMPLE_RATE        = 16000;
 
 let recording = false;
 let recProc = null;
 let holdTimer = null;
 let lastTouchMs = 0;
+let toggleCooldown = false; // debounce key-repeat in toggle mode
 let outboxOffset = 0;
 let busy = false;
 
@@ -70,6 +88,7 @@ function saveOffset() {
 function startRec() {
   if (recording || busy) return;
   recording = true;
+  spawn('afplay', ['-v', '0.6', START_SOUND], { stdio: 'ignore' });
   printStatus('🎤  Recording…  (release key to send)');
   recProc = spawn('rec', ['-q', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', TMP_WAV], {
     stdio: 'ignore',
@@ -92,14 +111,15 @@ function stopRec() {
   if (!recording || !recProc) return;
   recording = false;
   busy = true;
+  spawn('afplay', ['-v', '0.6', STOP_SOUND], { stdio: 'ignore' });
   const proc = recProc;
   recProc = null;
   proc.kill('SIGTERM');
   printStatus('⏳  Transcribing…');
-  setTimeout(transcribe, 400);
+  setTimeout(transcribe, 200);
 }
 
-// ── trigger-file polling (skhd hold detection) ────────────────────────────────
+// ── trigger-file polling ──────────────────────────────────────────────────────
 
 function pollTrigger() {
   try {
@@ -107,14 +127,33 @@ function pollTrigger() {
     if (mtimeMs <= lastTouchMs) return;
     lastTouchMs = mtimeMs;
 
-    // Key is being held — start or keep alive
-    if (!recording && !busy) startRec();
-    if (holdTimer) clearTimeout(holdTimer);
-    holdTimer = setTimeout(() => {
-      if (recording) stopRec();
-    }, RELEASE_MS);
+    if (PTT_MODE === 'toggle') {
+      // Debounce key-repeat: only act on the first event of each keypress
+      if (toggleCooldown) return;
+      toggleCooldown = true;
+      setTimeout(() => { toggleCooldown = false; }, RELEASE_MS);
+
+      if (recording) {
+        stopRec();
+      } else {
+        // Interrupt Claude if busy, then start recording immediately
+        if (busy) {
+          busy = false;
+          try { fs.writeFileSync(RESTART_FLAG, ''); } catch {}
+        }
+        startRec();
+      }
+    } else {
+      // hold mode: each touch resets the release timer
+      if (busy) { busy = false; try { fs.writeFileSync(RESTART_FLAG, ''); } catch {} }
+      if (!recording) startRec();
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => {
+        if (recording) stopRec();
+      }, RELEASE_MS);
+    }
   } catch {
-    // file doesn't exist yet — fine
+    // trigger file doesn't exist yet — fine
   }
 }
 
@@ -236,7 +275,10 @@ function pollOutbox() {
 
 function printStatus(s) { process.stdout.write('\r\x1b[K' + s); }
 function showPrompt() {
-  process.stdout.write(`\n🎙️   Hold  Ctrl+Shift+Space  to speak  |  Ctrl+C to quit\n`);
+  const hint = PTT_MODE === 'toggle'
+    ? 'Press  Ctrl+Shift+Space  to start · press again to send'
+    : 'Hold   Ctrl+Shift+Space  to speak · release to send';
+  process.stdout.write(`\n🎙️   ${hint}  |  Ctrl+C to quit\n`);
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
@@ -244,9 +286,9 @@ function showPrompt() {
 console.log('claude-heartbeat · push-to-talk  (skhd global hotkey)');
 console.log('──────────────────────────────────────────────────────');
 console.log(`hotkey:  Ctrl+Shift+Space  (trigger: ${TRIGGER})`);
+console.log(`mode:    ${PTT_MODE === 'toggle' ? 'toggle (press once to start, again to stop)' : `hold (stop after ${RELEASE_MS} ms silence)`}`);
 console.log(`whisper: ${WHISPER_BIN}  model: ${path.basename(WHISPER_MODEL)}`);
 console.log(`kokoro:  ${KOKORO_URL}  voice: ${KOKORO_VOICE}`);
-console.log(`release: ${RELEASE_MS} ms after last key-repeat`);
 
 // Validate whisper model exists
 if (!fs.existsSync(WHISPER_MODEL)) {
@@ -267,8 +309,34 @@ if (!fs.existsSync(skhdrc) || !fs.readFileSync(skhdrc, 'utf8').includes('ptt-hel
 initOffset();
 showPrompt();
 
+// Announce startup and readiness
+spawn('say', ['Claude Heartbeat ready.'], { stdio: 'ignore' });
+
 setInterval(pollTrigger, 50);
-setInterval(pollOutbox, 300);
+setInterval(pollOutbox, 300); // fallback poll
+
+// Fast outbox notification via native FSEvents (sub-10ms detection)
+try {
+  fs.watch(path.dirname(OUTBOX), (event, filename) => {
+    if (filename === path.basename(OUTBOX)) setTimeout(pollOutbox, 10);
+  });
+} catch { /* io/ dir may not exist yet — fallback poll covers it */ }
+
+if (IDLE_INTERVAL && fs.existsSync(IDLE_SOUND)) {
+  setInterval(() => {
+    if (!recording && !busy) {
+      spawn('afplay', ['-v', '0.3', IDLE_SOUND], { stdio: 'ignore' });
+    }
+  }, IDLE_INTERVAL * 1000);
+}
+
+if (THINKING_INTERVAL && fs.existsSync(THINKING_SOUND)) {
+  setInterval(() => {
+    if (!recording && busy) {
+      spawn('afplay', ['-v', '0.3', THINKING_SOUND], { stdio: 'ignore' });
+    }
+  }, THINKING_INTERVAL * 1000);
+}
 
 function cleanup() {
   if (recProc) try { recProc.kill(); } catch {}

@@ -87,6 +87,171 @@ node examples/cron-trigger.js
 node examples/webhook-receiver.js
 ```
 
+## Mac App (double-click launcher)
+
+The `mac-app/` directory contains an Electron menu bar app that bundles everything into a single double-click experience:
+
+- Opens **Terminal.app** running `supervisor.js` (the Claude Code agent loop) automatically on launch
+- Shows a **🎙 mic icon in the menu bar** for push-to-talk status
+- Remembers your `claude-heartbeat` workspace path after the first launch
+
+### Prerequisites
+
+Before installing the app, complete the [Push-to-talk setup](#push-to-talk) below (sox, whisper, skhd). The Mac app wraps those tools — it does not replace them.
+
+### Install
+
+```bash
+cd mac-app
+npm install
+npm run build         # produces dist/Claude Heartbeat-1.0.0-arm64.dmg
+open "dist/Claude Heartbeat-1.0.0-arm64.dmg"
+```
+
+Drag **Claude Heartbeat.app** to Applications and double-click to launch.
+
+**First launch:** a folder picker appears — select the `claude-heartbeat` directory (the one containing `supervisor.js`). The path is saved; subsequent launches are instant.
+
+### Tray menu
+
+Right-click the 🎙 icon for options:
+
+- **Open Terminal (supervisor)** — opens a Terminal.app window with the agent running
+- **Change Workspace…** — re-select the claude-heartbeat directory
+- **Quit** — stop the app and remove the hotkey trigger file
+
+### Build from source
+
+```bash
+cd mac-app
+npm install
+npm run build        # arm64 DMG
+npm start            # run without building (dev mode, reads workspace from ../
+```
+
+## Push-to-talk
+
+Speak to Claude from any screen. Press **Ctrl+Shift+Space** to start recording, press again to send. Claude speaks the response aloud. The system is entirely audio — no need to look at a terminal.
+
+### Accessibility note
+
+Because all interaction is voice in / voice out, push-to-talk works well for blind and low-vision users. Two audio tones confirm system state without needing to check the screen:
+
+- **Tink** (soft click, every 15 s) — idle, ready to record
+- **Pop** (every 4 s while waiting) — Claude is thinking
+
+**Toggle mode** (the default) is designed for one-handed use: press the hotkey once to start recording, press it again to stop. You do not need to hold the key combination while speaking.
+
+The hotkey **Ctrl+Shift+Space** does not conflict with macOS VoiceOver defaults.
+
+### Prerequisites
+
+- macOS (uses `afplay` for audio playback)
+- [Homebrew](https://brew.sh) — run the one-liner installer from their site if not installed
+- A Claude Code subscription at [claude.ai/code](https://claude.ai/code)
+
+### Step-by-step setup
+
+**1. Clone and enter the repo**
+
+```bash
+git clone https://github.com/Siigari/claude-heartbeat.git
+cd claude-heartbeat
+```
+
+**2. Install audio and transcription tools**
+
+```bash
+brew install sox
+brew install whisper-cpp
+```
+
+**3. Download the Whisper speech-to-text model (~142 MB)**
+
+```bash
+mkdir -p ~/.cache/whisper
+curl -L -o ~/.cache/whisper/ggml-base.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+```
+
+**4. Install and configure the global hotkey daemon**
+
+```bash
+brew install koekeishiya/formulae/skhd
+echo 'ctrl + shift - space : touch /tmp/ptt-held' >> ~/.skhdrc
+```
+
+**5. Grant Accessibility permission to skhd**
+
+Open System Settings, go to Privacy & Security → Accessibility, and enable skhd. This allows skhd to receive keypresses from any app.
+
+```bash
+skhd --start-service
+```
+
+If skhd was already running before you granted access, restart it:
+
+```bash
+skhd --restart-service
+```
+
+**6. Start the Claude agent (keep this running in the background)**
+
+```bash
+node supervisor.js
+```
+
+Use `tmux` or `screen` to keep it running after you close the terminal:
+
+```bash
+tmux new -s claude
+node supervisor.js
+# press Ctrl+B then D to detach; reconnect with: tmux attach -t claude
+```
+
+**7. Start push-to-talk**
+
+```bash
+npm run ptt
+```
+
+You will hear a soft **Tink** tone every 15 seconds confirming the system is alive. Press **Ctrl+Shift+Space** from any app to start recording. You will hear the tone stop. Press **Ctrl+Shift+Space** again to send. You will hear **Pop** tones while Claude thinks, then Claude speaks the answer aloud.
+
+Press **Ctrl+C** in the terminal to stop push-to-talk.
+
+### Text-to-speech options
+
+By default, responses are spoken using the built-in macOS `say` command. For a higher-quality voice, install [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI) and start it before running push-to-talk — it is detected automatically.
+
+### Tuning
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PTT_MODE` | `toggle` | `toggle` — press once to start, again to stop. `hold` — hold while speaking, release to send. |
+| `PTT_RELEASE_MS` | `700` | Hold mode: ms of silence before stopping. Toggle mode: debounce window to ignore key-repeat. |
+| `PTT_IDLE_INTERVAL` | `15` | Seconds between idle Tink pings. Set to `0` to disable. |
+| `PTT_THINKING_INTERVAL` | `4` | Seconds between thinking Pop pings. Set to `0` to disable. |
+| `PTT_IDLE_SOUND` | `Tink.aiff` | Full path to idle ping audio file. |
+| `PTT_THINKING_SOUND` | `Pop.aiff` | Full path to thinking ping audio file. |
+| `WHISPER_MODEL` | `~/.cache/whisper/ggml-base.en.bin` | Path to a different Whisper model. |
+
+Example — slower pings, snappier release:
+
+```bash
+PTT_IDLE_INTERVAL=30 PTT_THINKING_INTERVAL=6 PTT_RELEASE_MS=500 npm run ptt
+```
+
+### How it works
+
+```
+skhd (global hotkey)
+  └─ touches /tmp/ptt-held while key is held
+       └─ push_to_talk.js detects hold → starts recording (sox)
+            └─ on release → whisper-cli transcribes → writes to io/inbox.jsonl
+                 └─ signals supervisor to interrupt current Claude turn
+                      └─ Claude responds → push_to_talk.js reads outbox → speaks reply
+```
+
 ## What you get
 
 - **No SDK credits** — interactive mode uses your subscription
