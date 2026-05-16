@@ -3,4 +3,10 @@ io/.inbox-offset
 io/.outbox-offset
 io/.supervisor.pid
 io/.child.pid
+io/.ptt-offset
+io/.responded
+io/.restart
+io/.last-tick
+io/inbox.jsonl
+io/outbox.jsonl
 .env
