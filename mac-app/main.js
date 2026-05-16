@@ -26,7 +26,8 @@ const http = require('http');
 const ROOT        = path.resolve(__dirname, '..');
 const INBOX       = path.join(ROOT, 'io', 'inbox.jsonl');
 const OUTBOX      = path.join(ROOT, 'io', 'outbox.jsonl');
-const OFFSET_FILE = path.join(ROOT, 'io', '.ptt-offset');
+const OFFSET_FILE   = path.join(ROOT, 'io', '.ptt-offset');
+const RESTART_FLAG  = path.join(ROOT, 'io', '.restart');
 const TMP_WAV     = path.join(os.tmpdir(), 'ptt-in.wav');
 const TMP_RESP    = path.join(os.tmpdir(), 'ptt-out.wav');
 const TRIGGER     = process.env.PTT_TRIGGER    || '/tmp/ptt-held';
@@ -181,6 +182,7 @@ function transcribe() {
     content: text,
   });
   fs.appendFileSync(INBOX, msg + '\n');
+  try { fs.writeFileSync(RESTART_FLAG, ''); } catch {}
 }
 
 // ── TTS ───────────────────────────────────────────────────────────────────────

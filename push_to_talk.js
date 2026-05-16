@@ -33,6 +33,7 @@ const CWD = path.resolve(__dirname, '.');
 const INBOX = path.join(CWD, 'io', 'inbox.jsonl');
 const OUTBOX = path.join(CWD, 'io', 'outbox.jsonl');
 const OFFSET_FILE = path.join(CWD, 'io', '.ptt-offset');
+const RESTART_FLAG = path.join(CWD, 'io', '.restart');
 const TMP_WAV = path.join(os.tmpdir(), 'ptt-in.wav');
 const TMP_RESP_WAV = path.join(os.tmpdir(), 'ptt-out.wav');
 const TRIGGER = process.env.PTT_TRIGGER || '/tmp/ptt-held';
@@ -166,6 +167,7 @@ function transcribe() {
     content: text,
   });
   fs.appendFileSync(INBOX, msg + '\n');
+  try { fs.writeFileSync(RESTART_FLAG, ''); } catch {}
   printStatus('⏳  Waiting for Claude…');
 }
 
