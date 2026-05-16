@@ -21,6 +21,15 @@
 //   PTT_THINKING_INTERVAL seconds between thinking Pop pings (default: 4, 0 = off)
 //   PTT_THINKING_SOUND    thinking ping audio file
 
+// GUI apps launched via Finder don't inherit the shell PATH — add Homebrew manually
+process.env.PATH = [
+  '/opt/homebrew/bin',   // Apple Silicon
+  '/usr/local/bin',      // Intel
+  '/usr/bin',
+  '/bin',
+  process.env.PATH || '',
+].filter(Boolean).join(':');
+
 const { app, Tray, Menu, dialog, nativeImage, Notification, shell } = require('electron');
 const { spawn, spawnSync } = require('child_process');
 const fs   = require('fs');
