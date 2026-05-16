@@ -115,6 +115,8 @@ function resolveWorkspace() {
 
 // ── terminal / supervisor ─────────────────────────────────────────────────────
 
+const TERM_TITLE = 'Claude Heartbeat — Supervisor';
+
 function isSupervisorRunning() {
   try {
     const pid = parseInt(fs.readFileSync(SUPERVISOR_PID, 'utf8').trim());
@@ -126,13 +128,36 @@ function isSupervisorRunning() {
 
 function launchSupervisor() {
   if (isSupervisorRunning()) return;
-  // Open a new Terminal.app window running supervisor.js in the workspace
   const escaped = ROOT.replace(/'/g, "'\\''");
-  const script = `tell application "Terminal"
-    do script "cd '${escaped}' && node supervisor.js"
-    activate
-  end tell`;
+  // Open Terminal, run supervisor, set a recognisable window title so we can close it on quit
+  const script = `
+    tell application "Terminal"
+      set w to do script "cd '${escaped}' && node supervisor.js"
+      set custom title of (window 1) to "${TERM_TITLE}"
+      activate
+    end tell`;
   spawn('osascript', ['-e', script], { stdio: 'ignore' });
+}
+
+function killSupervisor() {
+  try {
+    const pid = parseInt(fs.readFileSync(SUPERVISOR_PID, 'utf8').trim());
+    if (pid) process.kill(pid, 'SIGTERM');
+  } catch {}
+}
+
+function closeSupervisorTerminal() {
+  const script = `
+    tell application "Terminal"
+      repeat with w in windows
+        try
+          if custom title of w is "${TERM_TITLE}" then
+            close w
+          end if
+        end try
+      end repeat
+    end tell`;
+  spawnSync('osascript', ['-e', script]);
 }
 
 // ── state ─────────────────────────────────────────────────────────────────────
@@ -181,7 +206,7 @@ function setStatus(state) {
       },
     },
     { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() },
+    { label: 'Quit', click: () => { killSupervisor(); closeSupervisorTerminal(); app.quit(); } },
   ].filter(Boolean);
   tray.setContextMenu(Menu.buildFromTemplate(items));
 }
