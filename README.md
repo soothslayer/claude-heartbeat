@@ -89,7 +89,7 @@ node examples/webhook-receiver.js
 
 ## Push-to-talk
 
-Speak to Claude from any screen. Hold **Ctrl+Shift+Space** to record, release to send. Claude speaks the response aloud. The system is entirely audio — no need to look at a terminal.
+Speak to Claude from any screen. Press **Ctrl+Shift+Space** to start recording, press again to send. Claude speaks the response aloud. The system is entirely audio — no need to look at a terminal.
 
 ### Accessibility note
 
@@ -97,6 +97,8 @@ Because all interaction is voice in / voice out, push-to-talk works well for bli
 
 - **Tink** (soft click, every 15 s) — idle, ready to record
 - **Pop** (every 4 s while waiting) — Claude is thinking
+
+**Toggle mode** (the default) is designed for one-handed use: press the hotkey once to start recording, press it again to stop. You do not need to hold the key combination while speaking.
 
 The hotkey **Ctrl+Shift+Space** does not conflict with macOS VoiceOver defaults.
 
@@ -171,7 +173,7 @@ node supervisor.js
 npm run ptt
 ```
 
-You will hear a soft **Tink** tone every 15 seconds confirming the system is alive. Hold **Ctrl+Shift+Space** from any app to record. When you release, you will hear **Pop** tones while Claude thinks, then Claude speaks the answer aloud.
+You will hear a soft **Tink** tone every 15 seconds confirming the system is alive. Press **Ctrl+Shift+Space** from any app to start recording. You will hear the tone stop. Press **Ctrl+Shift+Space** again to send. You will hear **Pop** tones while Claude thinks, then Claude speaks the answer aloud.
 
 Press **Ctrl+C** in the terminal to stop push-to-talk.
 
@@ -183,7 +185,8 @@ By default, responses are spoken using the built-in macOS `say` command. For a h
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PTT_RELEASE_MS` | `700` | Milliseconds after key release before transcription starts. Increase if recordings cut off early. |
+| `PTT_MODE` | `toggle` | `toggle` — press once to start, again to stop. `hold` — hold while speaking, release to send. |
+| `PTT_RELEASE_MS` | `700` | Hold mode: ms of silence before stopping. Toggle mode: debounce window to ignore key-repeat. |
 | `PTT_IDLE_INTERVAL` | `15` | Seconds between idle Tink pings. Set to `0` to disable. |
 | `PTT_THINKING_INTERVAL` | `4` | Seconds between thinking Pop pings. Set to `0` to disable. |
 | `PTT_IDLE_SOUND` | `Tink.aiff` | Full path to idle ping audio file. |

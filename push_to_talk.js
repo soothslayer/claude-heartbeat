@@ -18,7 +18,10 @@
 //   WHISPER_MODEL            path to ggml model file           (default: ~/.cache/whisper/ggml-base.en.bin)
 //   KOKORO_URL               TTS endpoint                      (default: http://127.0.0.1:8880/v1/audio/speech)
 //   KOKORO_VOICE             voice name                        (default: af_heart)
-//   PTT_RELEASE_MS           ms without a touch before release (default: 700)
+//   PTT_MODE                 toggle (default) or hold
+//                              toggle: press once to start, press again to stop
+//                              hold:   hold key while speaking, release to send
+//   PTT_RELEASE_MS           hold mode only — ms after last key-repeat before stopping (default: 700)
 //   PTT_TRIGGER              trigger file path                 (default: /tmp/ptt-held)
 //   PTT_IDLE_INTERVAL        seconds between idle pings         (default: 15, 0 = off)
 //   PTT_IDLE_SOUND           audio file when idle               (default: /System/Library/Sounds/Tink.aiff)
@@ -45,6 +48,7 @@ const WHISPER_MODEL = process.env.WHISPER_MODEL
   || path.join(os.homedir(), '.cache', 'whisper', 'ggml-base.en.bin');
 const KOKORO_URL = process.env.KOKORO_URL || 'http://127.0.0.1:8880/v1/audio/speech';
 const KOKORO_VOICE = process.env.KOKORO_VOICE || 'af_heart';
+const PTT_MODE           = (process.env.PTT_MODE || 'toggle').toLowerCase();
 const RELEASE_MS         = parseInt(process.env.PTT_RELEASE_MS || '700');
 const IDLE_INTERVAL     = parseInt(process.env.PTT_IDLE_INTERVAL     ?? '15');
 const IDLE_SOUND        = process.env.PTT_IDLE_SOUND        || '/System/Library/Sounds/Tink.aiff';
@@ -56,6 +60,7 @@ let recording = false;
 let recProc = null;
 let holdTimer = null;
 let lastTouchMs = 0;
+let toggleCooldown = false; // debounce key-repeat in toggle mode
 let outboxOffset = 0;
 let busy = false;
 
@@ -108,7 +113,7 @@ function stopRec() {
   setTimeout(transcribe, 400);
 }
 
-// ── trigger-file polling (skhd hold detection) ────────────────────────────────
+// ── trigger-file polling ──────────────────────────────────────────────────────
 
 function pollTrigger() {
   try {
@@ -116,14 +121,27 @@ function pollTrigger() {
     if (mtimeMs <= lastTouchMs) return;
     lastTouchMs = mtimeMs;
 
-    // Key is being held — start or keep alive
-    if (!recording && !busy) startRec();
-    if (holdTimer) clearTimeout(holdTimer);
-    holdTimer = setTimeout(() => {
-      if (recording) stopRec();
-    }, RELEASE_MS);
+    if (PTT_MODE === 'toggle') {
+      // Debounce key-repeat: only act on the first event of each keypress
+      if (toggleCooldown) return;
+      toggleCooldown = true;
+      setTimeout(() => { toggleCooldown = false; }, RELEASE_MS);
+
+      if (recording) {
+        stopRec();
+      } else if (!busy) {
+        startRec();
+      }
+    } else {
+      // hold mode: each touch resets the release timer
+      if (!recording && !busy) startRec();
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => {
+        if (recording) stopRec();
+      }, RELEASE_MS);
+    }
   } catch {
-    // file doesn't exist yet — fine
+    // trigger file doesn't exist yet — fine
   }
 }
 
@@ -246,7 +264,10 @@ function pollOutbox() {
 
 function printStatus(s) { process.stdout.write('\r\x1b[K' + s); }
 function showPrompt() {
-  process.stdout.write(`\n🎙️   Hold  Ctrl+Shift+Space  to speak  |  Ctrl+C to quit\n`);
+  const hint = PTT_MODE === 'toggle'
+    ? 'Press  Ctrl+Shift+Space  to start · press again to send'
+    : 'Hold   Ctrl+Shift+Space  to speak · release to send';
+  process.stdout.write(`\n🎙️   ${hint}  |  Ctrl+C to quit\n`);
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
@@ -254,9 +275,9 @@ function showPrompt() {
 console.log('claude-heartbeat · push-to-talk  (skhd global hotkey)');
 console.log('──────────────────────────────────────────────────────');
 console.log(`hotkey:  Ctrl+Shift+Space  (trigger: ${TRIGGER})`);
+console.log(`mode:    ${PTT_MODE === 'toggle' ? 'toggle (press once to start, again to stop)' : `hold (stop after ${RELEASE_MS} ms silence)`}`);
 console.log(`whisper: ${WHISPER_BIN}  model: ${path.basename(WHISPER_MODEL)}`);
 console.log(`kokoro:  ${KOKORO_URL}  voice: ${KOKORO_VOICE}`);
-console.log(`release: ${RELEASE_MS} ms after last key-repeat`);
 
 // Validate whisper model exists
 if (!fs.existsSync(WHISPER_MODEL)) {

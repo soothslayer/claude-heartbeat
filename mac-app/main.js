@@ -10,7 +10,7 @@
 //   Kokoro-FastAPI at localhost:8880 (optional; falls back to macOS say)
 //
 // env vars: same as push_to_talk.js — WHISPER_BIN, WHISPER_MODEL, KOKORO_URL,
-//           KOKORO_VOICE, PTT_RELEASE_MS, PTT_TRIGGER
+//           KOKORO_VOICE, PTT_MODE, PTT_RELEASE_MS, PTT_TRIGGER
 //   PTT_IDLE_INTERVAL       seconds between idle pings (default: 15, 0 = off)
 //   PTT_IDLE_SOUND          audio file when idle (default: /System/Library/Sounds/Tink.aiff)
 //   PTT_THINKING_INTERVAL   seconds between thinking pings (default: 4, 0 = off)
@@ -38,6 +38,7 @@ const WHISPER_BIN   = process.env.WHISPER_BIN   || 'whisper-cli';
 const WHISPER_MODEL = process.env.WHISPER_MODEL  || path.join(os.homedir(), '.cache', 'whisper', 'ggml-base.en.bin');
 const KOKORO_URL    = process.env.KOKORO_URL     || 'http://127.0.0.1:8880/v1/audio/speech';
 const KOKORO_VOICE  = process.env.KOKORO_VOICE   || 'af_heart';
+const PTT_MODE           = (process.env.PTT_MODE || 'toggle').toLowerCase();
 const RELEASE_MS         = parseInt(process.env.PTT_RELEASE_MS || '700');
 const IDLE_INTERVAL     = parseInt(process.env.PTT_IDLE_INTERVAL     ?? '15');
 const IDLE_SOUND        = process.env.PTT_IDLE_SOUND        || '/System/Library/Sounds/Tink.aiff';
@@ -50,9 +51,10 @@ const SAMPLE_RATE        = 16000;
 let tray         = null;
 let recording    = false;
 let recProc      = null;
-let holdTimer    = null;
-let lastTouchMs  = 0;
-let outboxOffset = 0;
+let holdTimer      = null;
+let toggleCooldown = false;
+let lastTouchMs    = 0;
+let outboxOffset   = 0;
 let busy         = false;
 
 // ── tray icon helpers ─────────────────────────────────────────────────────────
@@ -134,9 +136,18 @@ function pollTrigger() {
     const { mtimeMs } = fs.statSync(TRIGGER);
     if (mtimeMs <= lastTouchMs) return;
     lastTouchMs = mtimeMs;
-    if (!recording && !busy) startRec();
-    if (holdTimer) clearTimeout(holdTimer);
-    holdTimer = setTimeout(() => { if (recording) stopRec(); }, RELEASE_MS);
+
+    if (PTT_MODE === 'toggle') {
+      if (toggleCooldown) return;
+      toggleCooldown = true;
+      setTimeout(() => { toggleCooldown = false; }, RELEASE_MS);
+      if (recording) stopRec();
+      else if (!busy) startRec();
+    } else {
+      if (!recording && !busy) startRec();
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = setTimeout(() => { if (recording) stopRec(); }, RELEASE_MS);
+    }
   } catch {}
 }
 
