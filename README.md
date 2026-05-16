@@ -87,6 +87,126 @@ node examples/cron-trigger.js
 node examples/webhook-receiver.js
 ```
 
+## Push-to-talk
+
+Speak to Claude from any screen. Hold **Ctrl+Shift+Space** to record, release to send. Claude speaks the response aloud. The system is entirely audio — no need to look at a terminal.
+
+### Accessibility note
+
+Because all interaction is voice in / voice out, push-to-talk works well for blind and low-vision users. Two audio tones confirm system state without needing to check the screen:
+
+- **Tink** (soft click, every 15 s) — idle, ready to record
+- **Pop** (every 4 s while waiting) — Claude is thinking
+
+The hotkey **Ctrl+Shift+Space** does not conflict with macOS VoiceOver defaults.
+
+### Prerequisites
+
+- macOS (uses `afplay` for audio playback)
+- [Homebrew](https://brew.sh) — run the one-liner installer from their site if not installed
+- A Claude Code subscription at [claude.ai/code](https://claude.ai/code)
+
+### Step-by-step setup
+
+**1. Clone and enter the repo**
+
+```bash
+git clone https://github.com/Siigari/claude-heartbeat.git
+cd claude-heartbeat
+```
+
+**2. Install audio and transcription tools**
+
+```bash
+brew install sox
+brew install whisper-cpp
+```
+
+**3. Download the Whisper speech-to-text model (~142 MB)**
+
+```bash
+mkdir -p ~/.cache/whisper
+curl -L -o ~/.cache/whisper/ggml-base.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+```
+
+**4. Install and configure the global hotkey daemon**
+
+```bash
+brew install koekeishiya/formulae/skhd
+echo 'ctrl + shift - space : touch /tmp/ptt-held' >> ~/.skhdrc
+```
+
+**5. Grant Accessibility permission to skhd**
+
+Open System Settings, go to Privacy & Security → Accessibility, and enable skhd. This allows skhd to receive keypresses from any app.
+
+```bash
+skhd --start-service
+```
+
+If skhd was already running before you granted access, restart it:
+
+```bash
+skhd --restart-service
+```
+
+**6. Start the Claude agent (keep this running in the background)**
+
+```bash
+node supervisor.js
+```
+
+Use `tmux` or `screen` to keep it running after you close the terminal:
+
+```bash
+tmux new -s claude
+node supervisor.js
+# press Ctrl+B then D to detach; reconnect with: tmux attach -t claude
+```
+
+**7. Start push-to-talk**
+
+```bash
+npm run ptt
+```
+
+You will hear a soft **Tink** tone every 15 seconds confirming the system is alive. Hold **Ctrl+Shift+Space** from any app to record. When you release, you will hear **Pop** tones while Claude thinks, then Claude speaks the answer aloud.
+
+Press **Ctrl+C** in the terminal to stop push-to-talk.
+
+### Text-to-speech options
+
+By default, responses are spoken using the built-in macOS `say` command. For a higher-quality voice, install [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI) and start it before running push-to-talk — it is detected automatically.
+
+### Tuning
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PTT_RELEASE_MS` | `700` | Milliseconds after key release before transcription starts. Increase if recordings cut off early. |
+| `PTT_IDLE_INTERVAL` | `15` | Seconds between idle Tink pings. Set to `0` to disable. |
+| `PTT_THINKING_INTERVAL` | `4` | Seconds between thinking Pop pings. Set to `0` to disable. |
+| `PTT_IDLE_SOUND` | `Tink.aiff` | Full path to idle ping audio file. |
+| `PTT_THINKING_SOUND` | `Pop.aiff` | Full path to thinking ping audio file. |
+| `WHISPER_MODEL` | `~/.cache/whisper/ggml-base.en.bin` | Path to a different Whisper model. |
+
+Example — slower pings, snappier release:
+
+```bash
+PTT_IDLE_INTERVAL=30 PTT_THINKING_INTERVAL=6 PTT_RELEASE_MS=500 npm run ptt
+```
+
+### How it works
+
+```
+skhd (global hotkey)
+  └─ touches /tmp/ptt-held while key is held
+       └─ push_to_talk.js detects hold → starts recording (sox)
+            └─ on release → whisper-cli transcribes → writes to io/inbox.jsonl
+                 └─ signals supervisor to interrupt current Claude turn
+                      └─ Claude responds → push_to_talk.js reads outbox → speaks reply
+```
+
 ## What you get
 
 - **No SDK credits** — interactive mode uses your subscription
