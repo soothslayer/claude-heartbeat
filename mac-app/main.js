@@ -343,7 +343,6 @@ function transcribe() {
   fs.appendFileSync(INBOX, JSON.stringify({
     ts: new Date().toISOString(), channel: 'ptt', author: 'user', content: text,
   }) + '\n');
-  try { fs.writeFileSync(RESTART_FLAG, ''); } catch {}
 }
 
 // ── TTS ───────────────────────────────────────────────────────────────────────

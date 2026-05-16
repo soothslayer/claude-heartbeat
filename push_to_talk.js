@@ -201,7 +201,6 @@ function transcribe() {
     content: text,
   });
   fs.appendFileSync(INBOX, msg + '\n');
-  try { fs.writeFileSync(RESTART_FLAG, ''); } catch {}
   printStatus('⏳  Waiting for Claude…');
 }
 
