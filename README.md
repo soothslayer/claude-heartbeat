@@ -87,6 +87,48 @@ node examples/cron-trigger.js
 node examples/webhook-receiver.js
 ```
 
+## Mac App (double-click launcher)
+
+The `mac-app/` directory contains an Electron menu bar app that bundles everything into a single double-click experience:
+
+- Opens **Terminal.app** running `supervisor.js` (the Claude Code agent loop) automatically on launch
+- Shows a **🎙 mic icon in the menu bar** for push-to-talk status
+- Remembers your `claude-heartbeat` workspace path after the first launch
+
+### Prerequisites
+
+Before installing the app, complete the [Push-to-talk setup](#push-to-talk) below (sox, whisper, skhd). The Mac app wraps those tools — it does not replace them.
+
+### Install
+
+```bash
+cd mac-app
+npm install
+npm run build         # produces dist/Claude Heartbeat-1.0.0-arm64.dmg
+open "dist/Claude Heartbeat-1.0.0-arm64.dmg"
+```
+
+Drag **Claude Heartbeat.app** to Applications and double-click to launch.
+
+**First launch:** a folder picker appears — select the `claude-heartbeat` directory (the one containing `supervisor.js`). The path is saved; subsequent launches are instant.
+
+### Tray menu
+
+Right-click the 🎙 icon for options:
+
+- **Open Terminal (supervisor)** — opens a Terminal.app window with the agent running
+- **Change Workspace…** — re-select the claude-heartbeat directory
+- **Quit** — stop the app and remove the hotkey trigger file
+
+### Build from source
+
+```bash
+cd mac-app
+npm install
+npm run build        # arm64 DMG
+npm start            # run without building (dev mode, reads workspace from ../
+```
+
 ## Push-to-talk
 
 Speak to Claude from any screen. Press **Ctrl+Shift+Space** to start recording, press again to send. Claude speaks the response aloud. The system is entirely audio — no need to look at a terminal.
