@@ -5,6 +5,7 @@
   "main": "hooks/heartbeat.js",
   "scripts": {
     "ptt": "node push_to_talk.js",
+    "mac-app": "cd mac-app && npm start",
     "relay": "node relay/relay.js",
     "cron": "node examples/cron-trigger.js",
     "webhook": "node examples/webhook-receiver.js"

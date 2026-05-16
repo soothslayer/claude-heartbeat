@@ -1,4 +1,5 @@
 node_modules/
+mac-app/node_modules/
 io/.inbox-offset
 io/.outbox-offset
 io/.supervisor.pid

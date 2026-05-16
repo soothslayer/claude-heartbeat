@@ -1,0 +1,12 @@
+{
+  "name": "claude-heartbeat-mac",
+  "version": "1.0.0",
+  "description": "Claude Heartbeat — macOS menu bar push-to-talk app",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "dependencies": {
+    "electron": "^36.0.0"
+  }
+}
