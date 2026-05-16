@@ -27,6 +27,8 @@
 //   PTT_IDLE_SOUND           audio file when idle               (default: /System/Library/Sounds/Tink.aiff)
 //   PTT_THINKING_INTERVAL    seconds between thinking pings     (default: 4, 0 = off)
 //   PTT_THINKING_SOUND       audio file when Claude is working  (default: /System/Library/Sounds/Pop.aiff)
+//   PTT_START_SOUND          audio file played when recording starts (default: /System/Library/Sounds/Ping.aiff)
+//   PTT_STOP_SOUND           audio file played when recording stops  (default: /System/Library/Sounds/Bottle.aiff)
 
 const fs = require('fs');
 const path = require('path');
@@ -54,6 +56,8 @@ const IDLE_INTERVAL     = parseInt(process.env.PTT_IDLE_INTERVAL     ?? '15');
 const IDLE_SOUND        = process.env.PTT_IDLE_SOUND        || '/System/Library/Sounds/Tink.aiff';
 const THINKING_INTERVAL = parseInt(process.env.PTT_THINKING_INTERVAL ?? '4');
 const THINKING_SOUND    = process.env.PTT_THINKING_SOUND    || '/System/Library/Sounds/Pop.aiff';
+const START_SOUND       = process.env.PTT_START_SOUND       || '/System/Library/Sounds/Ping.aiff';
+const STOP_SOUND        = process.env.PTT_STOP_SOUND        || '/System/Library/Sounds/Bottle.aiff';
 const SAMPLE_RATE        = 16000;
 
 let recording = false;
@@ -84,6 +88,7 @@ function saveOffset() {
 function startRec() {
   if (recording || busy) return;
   recording = true;
+  spawn('afplay', ['-v', '0.6', START_SOUND], { stdio: 'ignore' });
   printStatus('🎤  Recording…  (release key to send)');
   recProc = spawn('rec', ['-q', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', TMP_WAV], {
     stdio: 'ignore',
@@ -106,6 +111,7 @@ function stopRec() {
   if (!recording || !recProc) return;
   recording = false;
   busy = true;
+  spawn('afplay', ['-v', '0.6', STOP_SOUND], { stdio: 'ignore' });
   const proc = recProc;
   recProc = null;
   proc.kill('SIGTERM');
@@ -297,6 +303,9 @@ if (!fs.existsSync(skhdrc) || !fs.readFileSync(skhdrc, 'utf8').includes('ptt-hel
 
 initOffset();
 showPrompt();
+
+// Announce startup and readiness
+spawn('say', ['Claude Heartbeat ready.'], { stdio: 'ignore' });
 
 setInterval(pollTrigger, 50);
 setInterval(pollOutbox, 300);

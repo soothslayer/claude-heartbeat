@@ -49,6 +49,8 @@ const IDLE_INT      = parseInt(process.env.PTT_IDLE_INTERVAL     ?? '15');
 const IDLE_SND      = process.env.PTT_IDLE_SOUND      || '/System/Library/Sounds/Tink.aiff';
 const THINK_INT     = parseInt(process.env.PTT_THINKING_INTERVAL ?? '4');
 const THINK_SND     = process.env.PTT_THINKING_SOUND  || '/System/Library/Sounds/Pop.aiff';
+const START_SND     = process.env.PTT_START_SOUND     || '/System/Library/Sounds/Ping.aiff';
+const STOP_SND      = process.env.PTT_STOP_SOUND      || '/System/Library/Sounds/Bottle.aiff';
 const TRIGGER       = process.env.PTT_TRIGGER    || '/tmp/ptt-held';
 const SAMPLE_RATE   = 16000;
 
@@ -234,6 +236,7 @@ const TMP_RESP = path.join(os.tmpdir(), 'ptt-out.wav');
 function startRec() {
   if (recording || busy) return;
   recording = true;
+  spawn('afplay', ['-v', '0.6', START_SND], { stdio: 'ignore' });
   setStatus('recording');
 
   recProc = spawn('rec', ['-q', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', TMP_WAV], {
@@ -255,6 +258,7 @@ function stopRec() {
   if (!recording || !recProc) return;
   recording = false;
   busy = true;
+  spawn('afplay', ['-v', '0.6', STOP_SND], { stdio: 'ignore' });
   const proc = recProc;
   recProc = null;
   proc.kill('SIGTERM');
@@ -413,14 +417,26 @@ app.whenReady().then(() => {
   fs.mkdirSync(path.join(workspace, 'io'), { recursive: true });
 
   initOffset();
+
+  // Announce startup immediately, then launch supervisor and say ready
+  spawn('say', ['Claude Heartbeat starting'], { stdio: 'ignore' });
   launchSupervisor();
 
   setInterval(pollTrigger, 50);
   setInterval(pollOutbox, 300);
   startHeartbeat();
 
+  // Announce ready after a short delay so supervisor has time to launch
+  setTimeout(() => {
+    const modeHint = PTT_MODE === 'toggle'
+      ? 'Press Control Shift Space to speak'
+      : 'Hold Control Shift Space to speak';
+    spawn('say', [`Ready. ${modeHint}.`], { stdio: 'ignore' });
+  }, 3000);
+
   if (!fs.existsSync(WHISPER_MODEL)) {
     notify('Setup needed', `Whisper model not found — see README for download command`);
+    spawn('say', ['Warning: Whisper model not found. See README for setup instructions.'], { stdio: 'ignore' });
   }
   const skhdrc = path.join(os.homedir(), '.skhdrc');
   if (!fs.existsSync(skhdrc) || !fs.readFileSync(skhdrc, 'utf8').includes('ptt-held')) {
