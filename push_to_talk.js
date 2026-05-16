@@ -135,12 +135,18 @@ function pollTrigger() {
 
       if (recording) {
         stopRec();
-      } else if (!busy) {
+      } else {
+        // Interrupt Claude if busy, then start recording immediately
+        if (busy) {
+          busy = false;
+          try { fs.writeFileSync(RESTART_FLAG, ''); } catch {}
+        }
         startRec();
       }
     } else {
       // hold mode: each touch resets the release timer
-      if (!recording && !busy) startRec();
+      if (busy) { busy = false; try { fs.writeFileSync(RESTART_FLAG, ''); } catch {} }
+      if (!recording) startRec();
       if (holdTimer) clearTimeout(holdTimer);
       holdTimer = setTimeout(() => {
         if (recording) stopRec();

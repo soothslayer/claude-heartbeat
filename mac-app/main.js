@@ -278,10 +278,15 @@ function pollTrigger() {
       if (toggleCooldown) return;
       toggleCooldown = true;
       setTimeout(() => { toggleCooldown = false; }, RELEASE_MS);
-      if (recording) stopRec();
-      else if (!busy) startRec();
+      if (recording) {
+        stopRec();
+      } else {
+        if (busy) { busy = false; try { fs.writeFileSync(RESTART_FLAG, ''); } catch {} }
+        startRec();
+      }
     } else {
-      if (!recording && !busy) startRec();
+      if (busy) { busy = false; try { fs.writeFileSync(RESTART_FLAG, ''); } catch {} }
+      if (!recording) startRec();
       if (holdTimer) clearTimeout(holdTimer);
       holdTimer = setTimeout(() => { if (recording) stopRec(); }, RELEASE_MS);
     }
