@@ -284,7 +284,7 @@ function stopRec() {
   recProc = null;
   proc.kill('SIGTERM');
   setStatus('transcribing');
-  setTimeout(transcribe, 400);
+  setTimeout(transcribe, 200);
 }
 
 // ── trigger-file polling ──────────────────────────────────────────────────────
@@ -449,7 +449,13 @@ app.whenReady().then(() => {
   launchSupervisor();
 
   setInterval(pollTrigger, 50);
-  setInterval(pollOutbox, 300);
+  setInterval(pollOutbox, 300); // fallback poll
+  // Fast outbox notification via native FSEvents (sub-10ms detection)
+  try {
+    fs.watch(path.join(workspace, 'io'), (event, filename) => {
+      if (filename === path.basename(OUTBOX)) setTimeout(pollOutbox, 10);
+    });
+  } catch { /* io/ may not exist yet — fallback poll covers it */ }
   startHeartbeat();
 
   // Announce ready after a short delay so supervisor has time to launch

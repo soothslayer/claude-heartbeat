@@ -111,7 +111,7 @@ function launch() {
         killProcess(child.pid);
       }
     }
-  }, 2000);
+  }, 300);
   currentPoll = poll;
 
   child.on('error', (err) => {

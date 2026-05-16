@@ -116,7 +116,7 @@ function stopRec() {
   recProc = null;
   proc.kill('SIGTERM');
   printStatus('⏳  Transcribing…');
-  setTimeout(transcribe, 400);
+  setTimeout(transcribe, 200);
 }
 
 // ── trigger-file polling ──────────────────────────────────────────────────────
@@ -314,7 +314,14 @@ showPrompt();
 spawn('say', ['Claude Heartbeat ready.'], { stdio: 'ignore' });
 
 setInterval(pollTrigger, 50);
-setInterval(pollOutbox, 300);
+setInterval(pollOutbox, 300); // fallback poll
+
+// Fast outbox notification via native FSEvents (sub-10ms detection)
+try {
+  fs.watch(path.dirname(OUTBOX), (event, filename) => {
+    if (filename === path.basename(OUTBOX)) setTimeout(pollOutbox, 10);
+  });
+} catch { /* io/ dir may not exist yet — fallback poll covers it */ }
 
 if (IDLE_INTERVAL && fs.existsSync(IDLE_SOUND)) {
   setInterval(() => {
