@@ -9,10 +9,8 @@
     "build": "electron-builder --mac",
     "build:dmg": "electron-builder --mac dmg"
   },
-  "dependencies": {
-    "electron": "^36.0.0"
-  },
   "devDependencies": {
+    "electron": "^36.0.0",
     "electron-builder": "^25.0.0"
   },
   "build": {
@@ -22,7 +20,7 @@
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] }
+        { "target": "dmg", "arch": ["arm64"] }
       ],
       "minimumSystemVersion": "12.0"
     },
