@@ -149,7 +149,23 @@ function killSupervisor() {
 }
 
 function closeSupervisorTerminal() {
-  const script = `
+  // 1. Send 'exit' to the shell so Terminal sees no running process (no confirm dialog)
+  const exitScript = `
+    tell application "Terminal"
+      repeat with w in windows
+        try
+          if custom title of w is "${TERM_TITLE}" then
+            do script "exit" in w
+          end if
+        end try
+      end repeat
+    end tell`;
+  spawnSync('osascript', ['-e', exitScript]);
+
+  // 2. Brief pause so the shell exits, then close the window
+  spawnSync('sleep', ['0.4']);
+
+  const closeScript = `
     tell application "Terminal"
       repeat with w in windows
         try
@@ -159,7 +175,7 @@ function closeSupervisorTerminal() {
         end try
       end repeat
     end tell`;
-  spawnSync('osascript', ['-e', script]);
+  spawnSync('osascript', ['-e', closeScript]);
 }
 
 // ── state ─────────────────────────────────────────────────────────────────────
@@ -208,7 +224,12 @@ function setStatus(state) {
       },
     },
     { type: 'separator' },
-    { label: 'Quit', click: () => { killSupervisor(); closeSupervisorTerminal(); app.quit(); } },
+    { label: 'Quit', click: () => {
+      killSupervisor();
+      spawnSync('sleep', ['0.3']); // let supervisor process die before sending exit to shell
+      closeSupervisorTerminal();
+      app.quit();
+    } },
   ].filter(Boolean);
   tray.setContextMenu(Menu.buildFromTemplate(items));
 }
