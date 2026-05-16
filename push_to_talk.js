@@ -20,8 +20,10 @@
 //   KOKORO_VOICE             voice name                        (default: af_heart)
 //   PTT_RELEASE_MS           ms without a touch before release (default: 700)
 //   PTT_TRIGGER              trigger file path                 (default: /tmp/ptt-held)
-//   PTT_HEARTBEAT_INTERVAL   seconds between heartbeat pings   (default: 15, 0 = off)
-//   PTT_HEARTBEAT_SOUND      path to audio file                (default: /System/Library/Sounds/Tink.aiff)
+//   PTT_IDLE_INTERVAL        seconds between idle pings         (default: 15, 0 = off)
+//   PTT_IDLE_SOUND           audio file when idle               (default: /System/Library/Sounds/Tink.aiff)
+//   PTT_THINKING_INTERVAL    seconds between thinking pings     (default: 4, 0 = off)
+//   PTT_THINKING_SOUND       audio file when Claude is working  (default: /System/Library/Sounds/Pop.aiff)
 
 const fs = require('fs');
 const path = require('path');
@@ -44,8 +46,10 @@ const WHISPER_MODEL = process.env.WHISPER_MODEL
 const KOKORO_URL = process.env.KOKORO_URL || 'http://127.0.0.1:8880/v1/audio/speech';
 const KOKORO_VOICE = process.env.KOKORO_VOICE || 'af_heart';
 const RELEASE_MS         = parseInt(process.env.PTT_RELEASE_MS || '700');
-const HEARTBEAT_INTERVAL = parseInt(process.env.PTT_HEARTBEAT_INTERVAL ?? '15');
-const HEARTBEAT_SOUND    = process.env.PTT_HEARTBEAT_SOUND || '/System/Library/Sounds/Tink.aiff';
+const IDLE_INTERVAL     = parseInt(process.env.PTT_IDLE_INTERVAL     ?? '15');
+const IDLE_SOUND        = process.env.PTT_IDLE_SOUND        || '/System/Library/Sounds/Tink.aiff';
+const THINKING_INTERVAL = parseInt(process.env.PTT_THINKING_INTERVAL ?? '4');
+const THINKING_SOUND    = process.env.PTT_THINKING_SOUND    || '/System/Library/Sounds/Pop.aiff';
 const SAMPLE_RATE        = 16000;
 
 let recording = false;
@@ -276,12 +280,20 @@ showPrompt();
 setInterval(pollTrigger, 50);
 setInterval(pollOutbox, 300);
 
-if (HEARTBEAT_INTERVAL && fs.existsSync(HEARTBEAT_SOUND)) {
+if (IDLE_INTERVAL && fs.existsSync(IDLE_SOUND)) {
   setInterval(() => {
     if (!recording && !busy) {
-      spawn('afplay', ['-v', '0.3', HEARTBEAT_SOUND], { stdio: 'ignore' });
+      spawn('afplay', ['-v', '0.3', IDLE_SOUND], { stdio: 'ignore' });
     }
-  }, HEARTBEAT_INTERVAL * 1000);
+  }, IDLE_INTERVAL * 1000);
+}
+
+if (THINKING_INTERVAL && fs.existsSync(THINKING_SOUND)) {
+  setInterval(() => {
+    if (!recording && busy) {
+      spawn('afplay', ['-v', '0.3', THINKING_SOUND], { stdio: 'ignore' });
+    }
+  }, THINKING_INTERVAL * 1000);
 }
 
 function cleanup() {
