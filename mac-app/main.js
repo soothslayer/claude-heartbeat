@@ -11,6 +11,8 @@
 //
 // env vars: same as push_to_talk.js — WHISPER_BIN, WHISPER_MODEL, KOKORO_URL,
 //           KOKORO_VOICE, PTT_RELEASE_MS, PTT_TRIGGER
+//   PTT_HEARTBEAT_INTERVAL  seconds between heartbeat pings (default: 15, 0 = off)
+//   PTT_HEARTBEAT_SOUND     path to audio file (default: /System/Library/Sounds/Tink.aiff)
 
 const { app, Tray, Menu, nativeImage, Notification } = require('electron');
 const { spawn, spawnSync } = require('child_process');
@@ -33,8 +35,10 @@ const WHISPER_BIN   = process.env.WHISPER_BIN   || 'whisper-cli';
 const WHISPER_MODEL = process.env.WHISPER_MODEL  || path.join(os.homedir(), '.cache', 'whisper', 'ggml-base.en.bin');
 const KOKORO_URL    = process.env.KOKORO_URL     || 'http://127.0.0.1:8880/v1/audio/speech';
 const KOKORO_VOICE  = process.env.KOKORO_VOICE   || 'af_heart';
-const RELEASE_MS    = parseInt(process.env.PTT_RELEASE_MS || '700');
-const SAMPLE_RATE   = 16000;
+const RELEASE_MS         = parseInt(process.env.PTT_RELEASE_MS || '700');
+const HEARTBEAT_INTERVAL = parseInt(process.env.PTT_HEARTBEAT_INTERVAL ?? '15');
+const HEARTBEAT_SOUND    = process.env.PTT_HEARTBEAT_SOUND || '/System/Library/Sounds/Tink.aiff';
+const SAMPLE_RATE        = 16000;
 
 // ── state ─────────────────────────────────────────────────────────────────────
 
@@ -244,6 +248,17 @@ function pollOutbox() {
   }
 }
 
+// ── heartbeat ping ────────────────────────────────────────────────────────────
+
+function startHeartbeat() {
+  if (!HEARTBEAT_INTERVAL || !fs.existsSync(HEARTBEAT_SOUND)) return;
+  setInterval(() => {
+    if (!recording && !busy) {
+      spawn('afplay', ['-v', '0.3', HEARTBEAT_SOUND], { stdio: 'ignore' });
+    }
+  }, HEARTBEAT_INTERVAL * 1000);
+}
+
 // ── notifications ─────────────────────────────────────────────────────────────
 
 function notify(title, body) {
@@ -268,6 +283,7 @@ app.whenReady().then(() => {
 
   setInterval(pollTrigger, 50);
   setInterval(pollOutbox, 300);
+  startHeartbeat();
 
   // Validate setup on launch
   if (!fs.existsSync(WHISPER_MODEL)) {

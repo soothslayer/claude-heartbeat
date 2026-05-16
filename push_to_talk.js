@@ -14,12 +14,14 @@
 // Optional TTS: Kokoro-FastAPI at localhost:8880; falls back to macOS `say`
 //
 // env vars:
-//   WHISPER_BIN     path/name of whisper-cli binary  (default: whisper-cli)
-//   WHISPER_MODEL   path to ggml model file           (default: ~/.cache/whisper/ggml-base.en.bin)
-//   KOKORO_URL      TTS endpoint                      (default: http://127.0.0.1:8880/v1/audio/speech)
-//   KOKORO_VOICE    voice name                        (default: af_heart)
-//   PTT_RELEASE_MS  ms without a touch before release (default: 700)
-//   PTT_TRIGGER     trigger file path                 (default: /tmp/ptt-held)
+//   WHISPER_BIN              path/name of whisper-cli binary  (default: whisper-cli)
+//   WHISPER_MODEL            path to ggml model file           (default: ~/.cache/whisper/ggml-base.en.bin)
+//   KOKORO_URL               TTS endpoint                      (default: http://127.0.0.1:8880/v1/audio/speech)
+//   KOKORO_VOICE             voice name                        (default: af_heart)
+//   PTT_RELEASE_MS           ms without a touch before release (default: 700)
+//   PTT_TRIGGER              trigger file path                 (default: /tmp/ptt-held)
+//   PTT_HEARTBEAT_INTERVAL   seconds between heartbeat pings   (default: 15, 0 = off)
+//   PTT_HEARTBEAT_SOUND      path to audio file                (default: /System/Library/Sounds/Tink.aiff)
 
 const fs = require('fs');
 const path = require('path');
@@ -40,8 +42,10 @@ const WHISPER_MODEL = process.env.WHISPER_MODEL
   || path.join(os.homedir(), '.cache', 'whisper', 'ggml-base.en.bin');
 const KOKORO_URL = process.env.KOKORO_URL || 'http://127.0.0.1:8880/v1/audio/speech';
 const KOKORO_VOICE = process.env.KOKORO_VOICE || 'af_heart';
-const RELEASE_MS = parseInt(process.env.PTT_RELEASE_MS || '700');
-const SAMPLE_RATE = 16000;
+const RELEASE_MS         = parseInt(process.env.PTT_RELEASE_MS || '700');
+const HEARTBEAT_INTERVAL = parseInt(process.env.PTT_HEARTBEAT_INTERVAL ?? '15');
+const HEARTBEAT_SOUND    = process.env.PTT_HEARTBEAT_SOUND || '/System/Library/Sounds/Tink.aiff';
+const SAMPLE_RATE        = 16000;
 
 let recording = false;
 let recProc = null;
@@ -269,6 +273,14 @@ showPrompt();
 
 setInterval(pollTrigger, 50);
 setInterval(pollOutbox, 300);
+
+if (HEARTBEAT_INTERVAL && fs.existsSync(HEARTBEAT_SOUND)) {
+  setInterval(() => {
+    if (!recording && !busy) {
+      spawn('afplay', ['-v', '0.3', HEARTBEAT_SOUND], { stdio: 'ignore' });
+    }
+  }, HEARTBEAT_INTERVAL * 1000);
+}
 
 function cleanup() {
   if (recProc) try { recProc.kill(); } catch {}
